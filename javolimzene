@@ -1,0 +1,1136 @@
+PLAYER:	EQU	%01110000	; Definicija asemblerske konstante za igraca. 
+BOARD:	EQU	%01001000	; Definicija asemblerske konstante za tablu.
+VOID:	EQU	%00000000	; Definicija asemblerske konstante za polja van table.
+ENEMY:	EQU	%00010000
+ENEMY1: EQU	%00100000
+
+	ORG 32768
+
+
+	CALL DRAW_BOARD
+	CALL INIT_PL
+	CALL INIT_EN
+	CALL INIT_EN1
+	
+
+MAIN_LOOP:
+	PUSH	AF
+	LD	A,(ZIV)
+	CP	1
+	JP	NZ,kraj
+	POP	AF
+	HALT
+	HALT
+	HALT
+	HALT	
+	HALT			; Sacekaj interapt (1/50s).
+	CALL	READ_KEYS
+
+	BIT	0,A		; Test stanja bita 0 = taster I (gore).
+	CALL	Z, MOVE_UP	; Ako je pritisnut pomeri se gore.
+	BIT	2,A		; Test stanja bita 2 = taster K (dole).
+	CALL	Z,MOVE_DOWN	; Ako je pritisnut pomeri se dole.
+	BIT	3,A		; Test stanja bita 3 = taster J (levo).
+	CALL	Z,MOVE_LEFT	; Ako je pritisnut pomeri se levo.
+	BIT	1,A		; Test stanja bita 1 = taster L (desno).
+	CALL	Z,MOVE_RIGHT	; Ako je pritisnut pomeri se desno.
+	BIT	4,A		; Test stanja bita 4 = taster H.
+	RET	Z		; Povratak u BASIC ako je pritisnut.
+	CALL	generisi4
+	CP	1
+	CALL	Z,ENEMY_UP
+	CP	2	
+	CALL	Z,ENEMY_DOWN
+	CP	3
+	CALL	Z,ENEMY_RIGHT
+	CP	4
+	CALL	Z,ENEMY_LEFT
+	CALL	generisi4
+	CP	1
+	CALL	Z,ENEMY1_UP
+	CP	2	
+	CALL	Z,ENEMY1_DOWN
+	CP	3
+	CALL	Z,ENEMY1_RIGHT
+	CP	4
+	CALL	Z,ENEMY1_LEFT
+	
+	
+	JR	MAIN_LOOP
+kraj:	
+	POP	BC
+	PUSH	AF
+	LD	A,1
+	LD	(ZIV),A
+	POP	AF
+	RET
+
+generisi4:
+	CALL	generateRandom
+	AND	%00000011
+	INC	A
+	RET	
+
+	;JR	MAIN_LOOP	; Ako nije pritisnuto H nazad na pocetak.
+
+;----------------------------------------------------------------------
+; Crtanje table na osnovu definicije u memoriji.
+;----------------------------------------------------------------------
+
+generateRandom:
+
+	push	hl
+	push	de
+	
+_rnd:	ld	hl,0xA280   ; xz -> yw
+	ld	de,0xC0DE   ; yw -> zt
+
+	ld	(_rnd+1),de ; x = y, z = w
+	ld 	a,e         ; w = w ^ ( w << 3 )
+	add	a,a
+	add	a,a
+	add	a,a
+	xor	e
+	ld	e,a
+	ld	a,h         ; t = x ^ (x << 1)
+	add	a,a
+	xor	h
+	ld	d,a
+	rra                 ; t = t ^ (t >> 1) ^ w
+	xor	d
+	xor	e
+	ld	h,l         ; y = z
+	ld	l,a         ; w = t
+	ld	(_rnd+4),hl
+
+	pop	de
+	pop	hl
+	ret
+		
+; ------------------------------------------------------------------------------ 
+; Seeds random number generator with R register. Not originally posted by
+; Patrik Rak, added later by Ivan Glisin to provide different initial values. 
+;
+; Input: 
+;   NONE
+; Output: 
+;   NONE
+; ------------------------------------------------------------------------------ 
+
+seedRandom:
+
+	push	af
+	ld	a,r
+	ld	(_rnd+4),a
+	pop	af
+	ret
+
+
+MOVE_UP:
+
+	PUSH	AF
+	PUSH	BC
+	PUSH	HL
+
+	LD	BC,-32		; Pripremi pomer|áa buducu poziciju.
+	
+	; Provera da li prelazimo van boje table:
+
+	LD	HL,(PLAYER_ADDR); Ucitaj trenutnu poziciju igraca. 
+	ADD	HL,BC		; Izracunaj adresu buduce pozicije.
+	LD	A,(HL)		; Ucitaj sadržaj´ƒbuduce pozicije.
+	LD	HL,(PLAYER_ADDR); Vrati trenutnu poziciju u HL.
+	CP	ENEMY
+	CALL	Z,zavrsi
+	CP	ENEMY1
+	CALL	Z,zavrsi
+	CP	VOID		; Da li je buduca pozicija u boji table?
+	JR	NZ,MU_EXIT	; Ako nije preskace se pomeranje. 
+	INC	HL
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	HL,(PLAYER_ADDR)
+	CP	ENEMY
+	CALL	Z,zavrsi
+	CP	ENEMY1
+	CALL	Z,zavrsi
+	CP	VOID
+	JR	NZ,MU_EXIT
+	
+	; Ako jeste pomeri igraca na novo polje:
+	LD	(HL),VOID
+	call	oboji3		; Obriši igraca (postavi boju table).
+	ADD	HL,BC		; Predji na novu poziciju.
+	LD	(HL),PLAYER	; Postavi boju igraca na novu adresu.
+	LD	(PLAYER_ADDR),HL; Snimi novu poziciju igraca.
+	LD	BC,64
+	ADD	HL,BC
+	LD	(HL),VOID
+	INC	HL
+	LD	(HL),VOID
+
+MU_EXIT:
+	POP	HL
+	POP	BC
+	POP	AF
+	RET
+	
+
+
+MOVE_DOWN:
+
+	PUSH	AF
+	PUSH	BC
+	PUSH	HL
+
+	LD	BC,64		; Pripremi pomeraj na buducu poziciju.
+	
+	; Provera da li prelazimo van boje table:
+	
+	LD	HL,(PLAYER_ADDR); Ucitaj trenutnu poziciju igraca.
+	ADD	HL,BC		; Izracunaj adresu buduce pozicije.
+	LD	A,(HL)		; Ucitaj sadržaj sa buduce pozicije.
+	LD	HL,(PLAYER_ADDR); Vrati trenutnu poziciju u HL.
+	CP	ENEMY
+	CALL	Z,zavrsi
+	CP	ENEMY1
+	CALL	Z,zavrsi
+	CP	void		; Da li je buduca pozicija u boji table?
+	JR	NZ,MD_EXIT	; Ako nije preskace se pomeranje. 	
+
+
+	INC	HL
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	HL,(PLAYER_ADDR)
+	CP	ENEMY
+	CALL	Z,zavrsi
+	CP	ENEMY1
+	CALL	Z,zavrsi
+	CP	void
+	JR	NZ,MD_EXIT
+	
+	LD	BC,32
+	; Ako nije poslednji red pomeri igraca na dole:
+	
+	LD	(HL),VOID
+	call 	oboji2		; Obriši igraca (postavi boju table).
+	ADD	HL,BC		; Predji na novu poziciju.
+	LD	(HL),PLAYER	; Postavi boju igraca na novu adresu.
+	LD	(PLAYER_ADDR),HL; Snimi novu poziciju igraca.
+	LD	BC,-31
+	ADD	HL,BC
+	LD	(HL),VOID
+	
+	
+MD_EXIT:
+	POP	HL
+	POP	BC
+	POP	AF
+	RET
+	
+
+MOVE_LEFT:
+
+	PUSH	AF
+	PUSH	BC
+	PUSH	HL
+
+	LD	BC,-1		; Pripremi pomeraj na buducu poziciju.
+
+	; Provera da li prelazimo van boje table:
+	
+	LD	HL,(PLAYER_ADDR); Ucitaj trenutnu poziciju igraca.
+	ADD	HL,BC		; Izracunaj adresu buduce pozicije.
+	LD	A,(HL)		; Ucitaj sadržaj sa buduce pozicije.
+	LD	HL,(PLAYER_ADDR); Vrati trenutnu poziciju u HL.
+	CP	ENEMY
+	CALL	Z,zavrsi
+	CP	ENEMY1
+	CALL	Z,zavrsi
+	CP	VOID		;Da li je buduca pozicija u boji table?
+	JR	NZ,ML_EXIT	; Ako nije preskace se pomeranje. 
+	LD	BC,32
+	ADD	HL,BC
+	LD	BC,-1
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	HL,(PLAYER_ADDR)
+	CP	ENEMY
+	CALL	Z,zavrsi
+	CP	ENEMY1
+	CALL	Z,zavrsi
+	CP	VOID
+	JR	NZ,ML_EXIT
+	
+	; Ako nije leva ivica pomeri igraca u levo:
+	
+	LD	(HL),VOID	; Obriši igraca (postavi boju table).
+	call	oboji
+	ADD	HL,BC		; Predji na novu poziciju.
+	LD	(HL),PLAYER	; Postavi boju igraca na novu adresu.
+	LD	(PLAYER_ADDR),HL; Snimi novu poziciju igraca.
+	LD	BC,2
+	ADD	HL,BC
+	LD	(HL),VOID
+	LD	BC,32
+	ADD	HL,BC
+	LD	(HL),VOID
+	;INC	HL
+	;LD	(HL),VOID
+	
+ML_EXIT:
+	POP	HL
+	POP	BC
+	POP	AF
+	RET
+
+
+
+
+INIT_PL:
+
+	PUSH	HL
+	PUSH	AF
+	LD	HL,$596F
+	LD	(PLAYER_ADDR),HL
+	LD	(HL),PLAYER
+	INC	HL
+	LD	(HL),PLAYER
+	LD	A,31
+HLSAB:
+	INC	HL
+	DEC	A
+	JR	NZ,HLSAB
+	LD	(HL),PLAYER
+	INC	HL
+	LD	(HL),PLAYER
+
+	POP	AF
+	POP	HL
+	RET
+
+INIT_EN:
+	PUSH	HL
+	PUSH	AF
+	LD	HL,22561
+	LD	(ENEMY_ADDR),HL
+	LD	(HL),ENEMY
+	INC	HL
+	LD	(HL),ENEMY
+	LD	A,31
+HLSABEN:
+	INC	HL
+	DEC	A
+	JR	NZ,HLSABEN
+	LD	(HL),ENEMY
+	INC	HL
+	LD	(HL),ENEMY
+	POP	AF
+	POP	HL
+	RET
+
+INIT_EN1:
+	PUSH	HL
+	PUSH	AF
+	LD	HL,23137
+	LD	(ENEMY_ADDR1),HL
+	LD	(HL),ENEMY1
+	INC	HL
+	LD	(HL),ENEMY1
+	LD	A,31
+HLSABEN1:
+	INC	HL
+	DEC	A
+	JR	NZ,HLSABEN1
+	LD	(HL),ENEMY1
+	INC	HL
+	LD	(HL),ENEMY1
+	POP	AF
+	POP	HL
+	RET
+
+
+MOVE_RIGHT:
+	
+	PUSH	AF
+	PUSH	BC
+	PUSH	HL
+
+	LD	BC,2		; Pripremi pomeraj na buducu poziciju.
+
+	; brisem ostale piksele pekmena da bih mogao da proverim da li mogu da
+	; se krecem na sledeci
+	
+	; Provera da li prelazimo van boje table
+
+
+	LD	HL,(PLAYER_ADDR); Ucitaj trenutnu poziciju igraca.
+	ADD	HL,BC		; Izracunaj adresu buduce pozicije.
+	LD	A,(HL)		; Ucitaj sadržaj sa buduce pozicije.
+	LD	HL,(PLAYER_ADDR); Ucitaj trenutnu poziciju igraca.
+	CP	VOID		; Da li je buduca pozicija u boji table?
+	JR	NZ,MR_EXIT	; Ako nije preskace se pomeranje. 
+
+	LD	BC,34
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	HL,(PLAYER_ADDR)
+	CP	VOID
+	JR	NZ,MR_EXIT
+	
+	; Ako nije desna ivica pomeri igraca u desno:
+skibidi3:	
+	LD	BC,1
+	LD	(HL),VOID	; Obriši igraca (postavi boju table).
+	call	oboji1
+	ADD	HL,BC		; Predji na novu poziciju.
+	LD	(HL),PLAYER	; Postavi boju igraca na novu adresu.
+	LD	(PLAYER_ADDR),HL; Snimi novu poziciju igraca.
+	LD	BC,31
+	ADD	HL,BC
+	LD	(HL),VOID
+	
+	
+MR_EXIT:
+	CP	%00000010
+	JR	Z,skibidi3
+	POP	HL
+	POP	BC
+	POP	AF
+	RET
+
+
+
+DRAW_BOARD:
+
+	PUSH	AF
+	PUSH	BC
+	PUSH	DE
+	PUSH	HL
+
+	LD	HL,22528	; Adresa prvog atributa u video memoriji.
+	LD	DE,MAZE		; Adresa brvog bajta u definiciji lavirinta.
+	LD	C,96		; Brojac bajtova definicije lavirinta.
+	
+	; Petlja koja cita svih 96 bajtova iz definicije lavirinta 
+	; i bit po bit ih interpretira kao boju table ili praznog
+	; prostora i prepisuje u video memoriju:
+
+DB_MAIN_LOOP:
+	LD	A,(DE)		; Ucitaj prvi bajt definicije lavirinta.	
+	LD	B,8		; Spremi brojac bitova u bajtu za šiftovanje.
+	
+DB_BYTE_SHIFT:
+	LD	(HL),VOID	; Upiši atribut za prazninu kao da nece biti table.
+	SLA	A		; Shift na levo, najviši bit se izbaci u Carry fleg.
+	JR	NC,DB_SKIP	; Ako je bit bio nula preskoci upis atributa u boji table.
+	LD	(HL),BOARD	; U protivnom upiši atribut u boji table.
+	
+DB_SKIP:
+	INC	HL		; Predi na adresu sledeceg atributa.
+	DEC	B		; Umanji brojac bitova.
+	JR	NZ,DB_BYTE_SHIFT; Ako nije nula nastavi sa pomeranjem bitova u postojecem bajtu.
+	
+	; Kada se završi sa jednim bajtom iz definicije lavirinta
+	; proverava se da li se stiglo do kraja definicije lavirinta, 
+	; pa ako nije uzima se sledeci bajt za novih osam atributa:
+	
+	DEC	C		; Umanji brojac bajtova definicije lavirinta.
+	JR	Z,DB_EXIT	; Ako je nula posao je gotov, izadi iz potprograma.
+
+	INC	DE		; Predi na sledeci bajt iz definicije lavirinta.
+	JR	DB_MAIN_LOOP	
+
+DB_EXIT:
+	POP	HL
+	POP	DE
+	POP	BC
+	POP	AF
+	RET
+
+READ_KEYS:
+
+	LD	BC,$BFFE	; Adresa porta na kome se nalaze HJKL<ENTER>.
+	IN	A,(C)		; Procitaj trenutno stanje tastera HJKL<ENTER>.
+	LD	BC,$DFFE	; Adresa porta na kome se nalaze YUIOP.
+	IN	D,(C)		; Procitaj trenutno stanje tastera YUIOP.
+	BIT	2,D		; Proveri da li je pritisnut taster I (bit 3 treba da bude 0).
+	RET	NZ		; Ako nije pritisnut registar A vec sadrži šta treba, kraj rutine.
+	RES	0,A		; Ako jeste resetuj bit 0 u registru A.
+	RET
+
+oboji:
+	PUSH	HL
+	PUSH	BC
+	LD	HL,(PLAYER_ADDR)
+	LD	(HL),PLAYER
+	LD	BC,31
+	ADD	HL,BC
+	LD	(HL),PLAYER
+	INC	HL
+	LD	(HL),PLAYER
+	POP	BC
+	POP	HL
+	ret
+oboji1:
+	PUSH	HL
+	PUSH	BC
+	LD	HL,(PLAYER_ADDR)
+	LD	BC,2
+	ADD	HL,BC
+	LD	(HL),PLAYER
+	LD	BC,31
+	ADD	HL,BC
+	LD	(HL),PLAYER
+	INC	HL
+	LD	(HL),PLAYER
+	POP	BC
+	POP	HL
+	RET
+oboji2:
+	PUSH	HL
+	PUSH	BC
+	LD	HL,(PLAYER_ADDR)
+	LD	BC,64
+	ADD	HL,BC
+	LD	(HL),PLAYER
+	INC	HL
+	LD	(HL),PLAYER
+	POP	BC
+	POP	HL
+	RET
+oboji3:
+	PUSH	HL
+	PUSH	BC
+	LD	BC,-32
+	LD	HL,(PLAYER_ADDR)
+	ADD	HL,BC
+	INC	HL
+	LD	(HL),PLAYER
+	LD	BC,31
+	ADD	HL,BC
+	LD	(HL),PLAYER
+	INC	HL
+	LD	(HL),PLAYER
+	POP	BC
+	POP	HL
+	RET
+
+obojien:
+	PUSH	HL
+	PUSH	BC
+	PUSH	AF
+	PUSH	DE
+	LD	HL,(ENEMY_ADDR)
+	LD	BC,31
+	ADD	HL,BC
+	LD	(HL),ENEMY
+	INC	HL
+	LD	(HL),ENEMY
+	POP	DE
+	POP	AF
+	POP	BC
+	POP	HL
+	ret
+oboji1en:
+	PUSH	HL
+	PUSH	BC
+	LD	HL,(ENEMY_ADDR)
+	LD	BC,2
+	ADD	HL,BC
+	LD	(HL),ENEMY
+	LD	BC,31
+	ADD	HL,BC
+	LD	(HL),ENEMY
+	INC	HL
+	LD	(HL),ENEMY
+	POP	BC
+	POP	HL
+	RET
+oboji2en:
+	PUSH	HL
+	PUSH	BC
+	LD	HL,(ENEMY_ADDR)
+	LD	BC,64
+	ADD	HL,BC
+	LD	(HL),ENEMY
+	INC	HL
+	LD	(HL),ENEMY
+	POP	BC
+	POP	HL
+	RET
+oboji3en:
+	PUSH	HL
+	PUSH	BC
+	LD	BC,-32
+	LD	HL,(ENEMY_ADDR)
+	ADD	HL,BC
+	INC	HL
+	LD	(HL),ENEMY
+	LD	BC,31
+	ADD	HL,BC
+	LD	(HL),ENEMY
+	INC	HL
+	LD	(HL),ENEMY
+	POP	BC
+	POP	HL
+	RET
+
+
+ENEMY_RIGHT:
+	
+	PUSH	AF
+	PUSH	BC
+	PUSH	HL
+	PUSH	DE
+	LD	D,2
+	LD	BC,2		; Pripremi pomeraj na buducu poziciju.
+
+	; brisem ostale piksele pekmena da bih mogao da proverim da li mogu da
+	; se krecem na sledeci
+	
+	; Provera da li prelazimo van boje table
+
+ponovir:
+	LD	HL,(ENEMY_ADDR); Ucitaj trenutnu poziciju igraca.
+	ADD	HL,BC		; Izracunaj adresu buduce pozicije.
+	LD	A,(HL)		; Ucitaj sadržaj sa buduce pozicije.
+	LD	HL,(ENEMY_ADDR); Ucitaj trenutnu poziciju igraca.
+	CP	PLAYER
+	CALL	Z,zavrsi
+	CP	VOID		; Da li je buduca pozicija u boji table?
+	JR	NZ,MRE_EXIT	; Ako nije preskace se pomeranje. 
+
+	LD	BC,34
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	HL,(ENEMY_ADDR)
+	CP	PLAYER
+	CALL	Z,zavrsi
+	CP	VOID
+	JR	NZ,MRE_EXIT
+
+	; Ako nije desna ivica pomeri igraca u desno:
+	
+	LD	BC,1
+	LD	(HL),VOID
+			; Obriši igraca (postavi boju table).
+	call	oboji1en
+	ADD	HL,BC		; Predji na novu poziciju.
+		; Postavi boju igraca na novu adresu.
+	LD	(ENEMY_ADDR),HL; Snimi novu poziciju igraca.
+	LD	BC,31
+	ADD	HL,BC
+	LD	(HL),VOID
+	
+	DEC	D
+	HALT
+	HALT
+	JR	NZ,ponovir
+	
+MRE_EXIT:
+	POP	DE
+	POP	HL
+	POP	BC
+	POP	AF
+	RET
+
+ZAVRSI:	
+	PUSH	AF
+	LD	A,2
+	LD	(ZIV),A
+	POP	AF
+	RET
+
+
+ENEMY_LEFT:
+
+	PUSH	AF
+	PUSH	BC
+	PUSH	HL
+	push	DE
+	LD	D,3
+	LD	BC,-1		; Pripremi pomeraj na buducu poziciju.
+
+	; Provera da li prelazimo van boje table:
+ponovil:
+	LD	HL,(ENEMY_ADDR); Ucitaj trenutnu poziciju igraca.
+	ADD	HL,BC		; Izracunaj adresu buduce pozicije.
+	LD	A,(HL)		; Ucitaj sadržaj sa buduce pozicije.
+	LD	HL,(ENEMY_ADDR); Vrati trenutnu poziciju u HL.
+	CP	PLAYER
+	CALL	Z,zavrsi
+	CP	VOID		;Da li je buduca pozicija u boji table?
+	JR	NZ,MLE_EXIT	; Ako nije preskace se pomeranje.
+
+	LD	BC,32
+	ADD	HL,BC
+	LD	BC,-1
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	HL,(ENEMY_ADDR)
+	CP	PLAYER
+	CALL	Z,zavrsi
+	CP	VOID
+	JR	NZ,MLE_EXIT
+
+	; Ako nije leva ivica pomeri igraca u levo:
+	
+	LD	(POZ1),HL
+	LD	(HL),ENEMY				; Obriši igraca (postavi boju table).
+	call	obojien
+	ADD	HL,BC
+	LD	(HL),enemy		; Postavi boju igraca na novu adresu.
+	LD	(ENEMY_ADDR),HL ; Snimi novu poziciju igraca.
+	LD	BC,2
+	ADD	HL,BC
+	LD	(HL),VOID
+	LD	BC,32
+	ADD	HL,BC
+	LD	(HL),VOID
+	
+	;INC	HL
+	;LD	(HL),VOID
+	DEC	D
+	HALT
+	HALT
+	JR	NZ,ponovil
+	
+MLE_EXIT:
+	POP	DE	
+	POP	HL
+	POP	BC
+	POP	AF
+	RET
+
+ENEMY_UP:
+
+	PUSH	AF
+	PUSH	BC
+	PUSH	HL
+	PUSH	DE
+	LD	D,3
+
+ponovig:	
+	LD	BC,-32		; Pripremi pomer|áa buducu poziciju.
+	
+	; Provera da li prelazimo van boje table:
+
+	LD	HL,(ENEMY_ADDR); Ucitaj trenutnu poziciju igraca. 
+	ADD	HL,BC		; Izracunaj adresu buduce pozicije.
+	LD	A,(HL)		; Ucitaj sadržaj´ƒbuduce pozicije.
+	LD	HL,(ENEMY_ADDR); Vrati trenutnu poziciju u HL.
+	CP	PLAYER
+	CALL	Z,zavrsi
+	CP	VOID		; Da li je buduca pozicija u boji table?
+	JR	NZ,MUE_EXIT	; Ako nije preskace se pomeranje. 
+	
+	INC	HL
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	HL,(ENEMY_ADDR)
+	CP	PLAYER
+	CALL	Z,zavrsi
+	CP	VOID
+	JR	NZ,MUE_EXIT
+	; Ako jeste pomeri igraca na novo polje:
+	
+	LD	(HL),VOID
+	call	oboji3en		; Obriši igraca (postavi boju table).
+	ADD	HL,BC		; Predji na novu poziciju.
+	LD	(HL),ENEMY	; Postavi boju igraca na novu adresu.
+	LD	(ENEMY_ADDR),HL; Snimi novu poziciju igraca.
+	LD	BC,64
+	ADD	HL,BC
+	LD	(HL),VOID
+	INC	HL
+	LD	(HL),VOID
+	DEC	D
+	HALT
+	HALT
+	JR	NZ,ponovig
+
+MUE_EXIT:
+	POP	DE
+	POP	HL
+	POP	BC
+	POP	AF
+	RET
+
+
+ENEMY_DOWN:
+
+	PUSH	AF
+	PUSH	BC
+	PUSH	HL
+	PUSH	DE
+	LD	D,3
+
+	LD	BC,64		; Pripremi pomeraj na buducu poziciju.
+	
+	; Provera da li prelazimo van boje table:
+ponovid:
+	LD	HL,(ENEMY_ADDR); Ucitaj trenutnu poziciju igraca.
+	ADD	HL,BC		; Izracunaj adresu buduce pozicije.
+	LD	A,(HL)		; Ucitaj sadržaj sa buduce pozicije.
+	LD	HL,(enemy_ADDR); Vrati trenutnu poziciju u HL.
+	CP	PLAYER
+	CALL	Z,zavrsi
+	CP	void		; Da li je buduca pozicija u boji table?
+	JR	NZ,MDE_EXIT	; Ako nije preskace se pomeranje. 	
+	
+	INC	HL
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	HL,(enemy_ADDR)
+	CP	PLAYER
+	CALL	Z,zavrsi
+	CP	void
+	JR	NZ,MDE_EXIT
+	LD	BC,32
+
+	; Ako nije poslednji red pomeri igraca na dole:
+	
+	LD	(HL),VOID
+	call 	oboji2en	; Obriši igraca (postavi boju table).
+	ADD	HL,BC		; Predji na novu poziciju.
+	LD	(HL),ENEMY	; Postavi boju igraca na novu adresu.
+	LD	(enemy_ADDR),HL; Snimi novu poziciju igraca.
+	LD	BC,-31
+	ADD	HL,BC
+	LD	(HL),VOID
+	DEC	D
+	HALT
+	HALT
+	JR	NZ,ponovid
+	
+	
+MDE_EXIT:
+	POP	DE
+	POP	HL
+	POP	BC
+	POP	AF
+	RET
+
+obojien1:
+	PUSH	HL
+	PUSH	BC
+	LD	HL,(ENEMY_ADDR1)
+	LD	(HL),ENEMY1
+	LD	BC,31
+	ADD	HL,BC
+	LD	(HL),ENEMY1
+	INC	HL
+	LD	(HL),ENEMY1
+	POP	BC
+	POP	HL
+	ret
+oboji1en1:
+	PUSH	HL
+	PUSH	BC
+	LD	HL,(ENEMY_ADDR1)
+	LD	BC,2
+	ADD	HL,BC
+	LD	(HL),ENEMY1
+	LD	BC,31
+	ADD	HL,BC
+	LD	(HL),ENEMY1
+	INC	HL
+	LD	(HL),ENEMY1
+	POP	BC
+	POP	HL
+	RET
+oboji2en1:
+	PUSH	HL
+	PUSH	BC
+	LD	HL,(ENEMY_ADDR1)
+	LD	BC,64
+	ADD	HL,BC
+	LD	(HL),ENEMY1
+	INC	HL
+	LD	(HL),ENEMY1
+	POP	BC
+	POP	HL
+	RET
+oboji3en1:
+	PUSH	HL
+	PUSH	BC
+	LD	BC,-32
+	LD	HL,(ENEMY_ADDR1)
+	ADD	HL,BC
+	INC	HL
+	LD	(HL),ENEMY1
+	LD	BC,31
+	ADD	HL,BC
+	LD	(HL),ENEMY1
+	INC	HL
+	LD	(HL),ENEMY1
+	POP	BC
+	POP	HL
+	RET
+
+
+ENEMY1_RIGHT:
+	
+	PUSH	AF
+	PUSH	BC
+	PUSH	HL
+	PUSH	DE
+	LD	D,2
+	LD	BC,2		; Pripremi pomeraj na buducu poziciju.
+
+	; brisem ostale piksele pekmena da bih mogao da proverim da li mogu da
+	; se krecem na sledeci
+	
+	; Provera da li prelazimo van boje table
+
+ponovir1:
+	LD	HL,(ENEMY_ADDR1); Ucitaj trenutnu poziciju igraca.
+	ADD	HL,BC		; Izracunaj adresu buduce pozicije.
+	LD	A,(HL)		; Ucitaj sadržaj sa buduce pozicije.
+	LD	HL,(ENEMY_ADDR1); Ucitaj trenutnu poziciju igraca.
+	CP	PLAYER
+	CALL	Z,zavrsi
+	CP	VOID		; Da li je buduca pozicija u boji table?
+	JR	NZ,MRE1_EXIT	; Ako nije preskace se pomeranje. 
+
+	LD	BC,34
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	HL,(ENEMY_ADDR1)
+	CP	PLAYER
+	CALL	Z,zavrsi
+	CP	VOID
+	JR	NZ,MRE1_EXIT
+
+	; Ako nije desna ivica pomeri igraca u desno:
+	
+	LD	BC,1
+	LD	(HL),VOID	; Obriši igraca (postavi boju table).
+	call	oboji1en1
+	ADD	HL,BC		; Predji na novu poziciju.
+	LD	(HL),ENEMY1	; Postavi boju igraca na novu adresu.
+	LD	(ENEMY_ADDR1),HL; Snimi novu poziciju igraca.
+	LD	BC,31
+	ADD	HL,BC
+	LD	(HL),VOID
+	DEC	D
+	HALT
+	HALT
+	JR	NZ,ponovir1
+	
+MRE1_EXIT:
+	POP	DE
+	POP	HL
+	POP	BC
+	POP	AF
+	RET
+
+ENEMY1_LEFT:
+
+	PUSH	AF
+	PUSH	BC
+	PUSH	HL
+	push	DE
+	LD	D,3
+	LD	BC,-1		; Pripremi pomeraj na buducu poziciju.
+
+	; Provera da li prelazimo van boje table:
+ponovil1:
+	LD	HL,(ENEMY_ADDR1); Ucitaj trenutnu poziciju igraca.
+	ADD	HL,BC		; Izracunaj adresu buduce pozicije.
+	LD	A,(HL)		; Ucitaj sadržaj sa buduce pozicije.
+	LD	HL,(ENEMY_ADDR1); Vrati trenutnu poziciju u HL.	;Da li je buduca pozicija u boji table?	; Ako nije preskace se pomeranje. 
+
+	CP	PLAYER
+	CALL	Z,zavrsi
+	CP	VOID
+	JP	NZ,MLE1_EXIT
+
+	LD	BC,32
+	ADD	HL,BC
+	LD	BC,-1
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	HL,(ENEMY_ADDR1)
+	CP	PLAYER
+	CALL	Z,zavrsi
+	CP	VOID
+	JR	NZ,MLE1_EXIT
+	; Ako nije leva ivica pomeri igraca u levo:
+	
+	LD	(HL),VOID	; Obriši igraca (postavi boju table).
+	call	obojien1
+	ADD	HL,BC		; Predji na novu poziciju.
+	LD	(HL),ENEMY1	; Postavi boju igraca na novu adresu.
+	LD	(ENEMY_ADDR1),HL; Snimi novu poziciju igraca.
+	LD	BC,2
+	ADD	HL,BC
+	LD	(HL),VOID
+	LD	BC,32
+	ADD	HL,BC
+	LD	(HL),VOID
+	;INC	HL
+	;LD	(HL),VOID
+	DEC	D
+	HALT
+	HALT
+	JR	NZ,ponovil1
+	
+MLE1_EXIT:
+	POP	DE	
+	POP	HL
+	POP	BC
+	POP	AF
+	RET
+
+ENEMY1_UP:
+
+	PUSH	AF
+	PUSH	BC
+	PUSH	HL
+	PUSH	DE
+	LD	D,3
+
+ponovig1:	
+	LD	BC,-32		; Pripremi pomer|áa buducu poziciju.
+	
+	; Provera da li prelazimo van boje table:
+
+	LD	HL,(ENEMY_ADDR1); Ucitaj trenutnu poziciju igraca. 
+	ADD	HL,BC		; Izracunaj adresu buduce pozicije.
+	LD	A,(HL)		; Ucitaj sadržaj´ƒbuduce pozicije.
+	LD	HL,(ENEMY_ADDR1)
+	CP	PLAYER
+	CALL	Z,zavrsi		; Vrati trenutnu poziciju u HL.
+	CP	VOID		; Da li je buduca pozicija u boji table?
+	JR	NZ,MUE1_EXIT	; Ako nije preskace se pomeranje. 
+
+	INC	HL
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	HL,(ENEMY_ADDR1)
+	CP	PLAYER
+	CALL	Z,zavrsi
+	CP	VOID
+	JR	NZ,MUE1_EXIT
+
+	; Ako jeste pomeri igraca na novo polje:
+	
+	LD	(HL),VOID
+	call	oboji3en1		; Obriši igraca (postavi boju table).
+	ADD	HL,BC		; Predji na novu poziciju.
+	LD	(HL),ENEMY1	; Postavi boju igraca na novu adresu.
+	LD	(ENEMY_ADDR1),HL; Snimi novu poziciju igraca.
+	LD	BC,64
+	ADD	HL,BC
+	LD	(HL),VOID
+	INC	HL
+	LD	(HL),VOID
+	DEC	D
+	HALT
+	HALT
+	JR	NZ,ponovig1
+
+MUE1_EXIT:
+	POP	DE
+	POP	HL
+	POP	BC
+	POP	AF
+	RET
+
+
+ENEMY1_DOWN:
+
+	PUSH	AF
+	PUSH	BC
+	PUSH	HL
+	PUSH	DE
+	LD	D,3
+
+	LD	BC,64		; Pripremi pomeraj na buducu poziciju.
+	
+	; Provera da li prelazimo van boje table:
+ponovid1:
+	LD	HL,(ENEMY_ADDR1); Ucitaj trenutnu poziciju igraca.
+	ADD	HL,BC		; Izracunaj adresu buduce pozicije.
+	LD	A,(HL)		; Ucitaj sadržaj sa buduce pozicije.
+	LD	HL,(enemy_ADDR1); Vrati trenutnu poziciju u HL.
+	CP	PLAYER
+	CALL	Z,zavrsi
+	CP	void		; Da li je buduca pozicija u boji table?
+	JR	NZ,MDE1_EXIT	; Ako nije preskace se pomeranje. 	
+
+
+	INC	HL
+	ADD	HL,BC
+	LD	A,(HL)
+	LD	HL,(enemy_ADDR1)
+	CP	PLAYER
+	CALL	Z,zavrsi
+	CP	void
+	JR	NZ,MDE1_EXIT
+	LD	BC,32
+
+	; Ako nije poslednji red pomeri igraca na dole:
+	
+	LD	(HL),VOID
+	call 	oboji2en1	; Obriši igraca (postavi boju table).
+	ADD	HL,BC		; Predji na novu poziciju.
+	LD	(HL),ENEMY1	; Postavi boju igraca na novu adresu.
+	LD	(enemy_ADDR1),HL; Snimi novu poziciju igraca.
+	LD	BC,-31
+	ADD	HL,BC
+	LD	(HL),VOID
+	DEC	D
+	HALT
+	HALT
+	JR	NZ,ponovid1
+	
+	
+MDE1_EXIT:
+	POP	DE
+	POP	HL
+	POP	BC
+	POP	AF
+	RET
+
+
+
+START:		DEFW	22895		; Startna pozicija
+PLAYER_ADDR:	DEFW	0	; Trenutna pozicija igraca.
+MOVE_COUNTER:	DEFW	0 	; Broj preostalih poteza (moze ih biti vise od 255).
+LEVEL_ADDR:	DEFW	0	; StartnaÌ{‚esa definicije nivoa.
+ENEMY_ADDR:	DEFW	0	; POZICIJA DUHA 1
+ENEMY_ADDR1:	DEFW	0	; POZICIJA DUHA 2
+ZIV:		DEFW	1
+POZ1:		DEFW	VOID
+POZ2:		DEFW	VOID
+POZ3:		DEFW	VOID
+POZ4:		DEFW	VOID	
+
+MAZE:	DEFB	%11111111, %11111111, %11111111, %11111111
+	DEFB	%10000000, %00000001, %10000000, %00000001
+	DEFB	%10000000, %00000001, %10000000, %00000001
+	DEFB	%10011100, %11111001, %10011111, %00111001
+	DEFB	%10011100, %11111001, %10011111, %00111001
+	DEFB	%10000000, %00000000, %00000000, %00000001
+	DEFB	%10000000, %00000000, %00000000, %00000001
+	DEFB	%10011100, %10011111, %11111001, %00111001
+	DEFB	%10000000, %10000001, %10000001, %00000001
+	DEFB	%10000000, %10000001, %10000001, %00000001
+	DEFB	%11111100, %11111001, %10011111, %00111111
+	DEFB	%10000000, %00000000, %00000000, %00000001
+	DEFB	%10000000, %00000000, %00000000, %00000001
+	DEFB	%10011100, %11111110, %01111111, %00111001
+	DEFB	%10000100, %00000000, %00000000, %00100001
+	DEFB	%10000100, %00000000, %00000000, %00100001
+	DEFB	%11100100, %10011111, %11111001, %00100111
+	DEFB	%10000000, %10000001, %10000001, %00000001
+	DEFB	%10000000, %10000001, %10000001, %00000001
+	DEFB	%10011111, %11111001, %10011111, %11111001
+	DEFB	%10000000, %00000000, %00000000, %00000001
+	DEFB	%10000000, %00000000, %00000000, %00000001
+	DEFB	%11111111, %11111111, %11111111, %11111111
+	DEFB	%00000000, %00000000, %00000000, %00000000
